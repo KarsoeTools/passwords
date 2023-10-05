@@ -1,0 +1,107 @@
+trigger:
+- main
+
+resources:
+  
+  repositories:          
+    - repository: repository # The name used to reference this repository in the checkout step
+      type: git
+      # endpoint: KMD.DIMA.ConnectNEC.ArgoCD.adminportal
+      endpoint: kubernetes-project
+      name:  Kubernetes%20KarsoeHome/Kubernetes.KarsoeHome
+      # ref: argo
+
+variables:
+  tag: '$(Build.BuildId)'
+  repository: 'karsoekube/guids'
+  containerRegistry: 'karsoehome'
+  application_component_name: 'Guids'  
+  major: 1
+  minor: 1
+  buildTag: $(major).$(minor).$(tag)  
+  argo_helm_project: '$(application_component_name)'
+
+stages:
+- stage: Build
+  
+  displayName: Build image
+  jobs:      
+
+  - job: Build
+    displayName: Build
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - checkout: self      
+    - powershell: |
+        Get-ChildItem -Recurse
+    - task: Docker@2      
+      displayName: Login (Test) 
+      inputs:
+        containerRegistry: $(containerRegistry)
+        command: login
+    - task: Docker@2
+      displayName: Build an image
+      inputs:
+        command: buildAndPush
+        containerRegistry: $(containerRegistry)
+        repository: $(repository)
+        dockerfile: 'dockerfile'
+        tags: |
+          latest
+          $(buildTag)
+- stage: argo
+  jobs:
+  - job: 'Updating'
+    steps:
+    - checkout: repository 
+      persistCredentials: true
+    - powershell: | 
+       Get-ChildItem -Recurse
+    - task: PowerShell@2
+      displayName: "Update Image Ref"
+      inputs:
+        workingDirectory: "./$(argo_helm_project)"
+        targetType: inline
+        script: |
+          Write-Host "Working dir : $(argo_helm_project)"
+          Write-Host "SourceBranch: $(Build.SourceBranch)"
+          Write-Host "Container Image BuildTag: $(buildTag)"
+          if ("$(Build.SourceBranch)" -eq "refs/heads/main")
+          {
+            Write-Host "Writing prod file"
+            $outfile = "./main.imageref.txt"
+          }
+          elseif ("$(Build.SourceBranch)" -eq "refs/heads/develop")
+          {
+            Write-Host "Writing develop file"
+            $outfile = "./develop.imageref.txt"
+          }
+          else 
+          {
+            Write-Host "Writing feature file"
+            $outfile = "./feature.imageref.txt"
+          }
+          
+          if ($outfile)
+          {
+            
+            Write-Host "Writing build name in $(application_component_name)"
+            git config --global user.email "$(application_component_name)@sco"
+            git config --global user.name "ci-pipeline.$(application_component_name)"
+            git config pull.rebase false
+            git checkout  -b master 
+            git pull origin master
+            git add .
+            Write-Host "setting build tag"
+            "$(buildTag)" | Out-File -FilePath "$outfile"
+            
+            git commit -a -m "Updated container image buildtag in $outfile"          
+            
+            Write-Host "pushing to $(application_component_name)"
+            git push --set-upstream origin master --force-with-lease
+          }
+    
+            
+
+          

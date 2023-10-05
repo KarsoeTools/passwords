@@ -1,0 +1,94 @@
+# ASP.NET
+# Build and test ASP.NET projects.
+# Add steps that publish symbols, save build artifacts, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/apps/aspnet/build-aspnet-4
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  - name: application_component_name
+    value: KMD.DIMA.ConnectNEC.HelmCharts
+  - name: working_docker_dir
+    value: KMD.DIMA.ConnectNEC.Service.FileOperation
+  - name: argo_helm_project
+    value: service-fileoperation
+  - name: solution
+    value:  '**/*.sln'
+  - name: buildPlatform
+    value: 'Any CPU'
+  - name: buildConfiguration
+    value: 'Release'
+  - group: PAT token for DIMA Azure Artifacts
+
+resources:
+  repositories:       
+    - repository: dima-devops-templates
+      type: git
+      name: kmd.dima.kip/devops-terraform-template-shared
+      ref: refs/tags/blueprint_v4.17.1
+    - repository: repository # The name used to reference this repository in the checkout step
+      type: git
+      # endpoint: KMD.DIMA.ConnectNEC.ArgoCD.adminportal
+      name: KMD.DIMA.ConnectNEC.HelmCharts
+      ref: refs/tags/argo
+
+steps:  
+  - checkout: self       
+  - template: aks/step-templates/ci-steps-template.yml@dima-devops-templates
+    parameters:
+      application_component_name: $(argo_helm_project)
+      azureConnectionName: connect-ACR-Build
+      azure_container_registry_name: kmddimaacrdev
+      azure_container_registry_dns: kmddimaacrdev.azurecr.io
+      azure_container_registry_repository: connect
+      workingDir: '$(working_docker_dir)'
+      application_component_directory: '.'
+      dockerBuildOptions: "--build-arg PAT=$(PAT)"
+      build_helm_chart: false
+
+  - checkout: repository
+    persistCredentials: true
+  
+  - task: PowerShell@2
+    displayName: "Update Image Ref"
+    inputs:
+      workingDirectory: "$(System.DefaultWorkingDirectory)/$(application_component_name)"
+      targetType: inline
+      script: |
+        Write-Host "SourceBranch: $(Build.SourceBranch)"
+        Write-Host "Container Image BuildTag: $(buildTag)"
+        if ("$(Build.SourceBranch)" -eq "refs/heads/production")
+        {
+          Write-Host "Writing prod file"
+          $outfile = "./$(argo_helm_project)/prod.imageref.txt"
+        }
+        elseif ("$(Build.SourceBranch)" -eq "refs/heads/develop")
+        {
+          Write-Host "Writing develop file"
+          $outfile = "./$(argo_helm_project)/dev.imageref.txt"
+        }
+        else 
+        {
+          Write-Host "Writing feature file"
+          $outfile = "./$(argo_helm_project)/feature.imageref.txt"
+        }
+        
+        if ($outfile)
+        {
+          Write-Host "Writing build name in $(application_component_name)"
+          git config --global user.email "$(application_component_name)@sco"
+          git config --global user.name "ci-pipeline.$(application_component_name)"
+          git config pull.rebase false
+          git checkout  -b production 
+          git pull origin production
+          Write-Host "setting build tag"
+          "$(buildTag)" | Out-File -FilePath "$outfile"
+          
+          git commit -a -m "Updated container image buildtag in $outfile"          
+          
+          Write-Host "pushing to $(application_component_name)"
+          git push --set-upstream origin production --force-with-lease
+        }
+          
