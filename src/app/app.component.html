@@ -24,7 +24,7 @@
     </div>
   </div>
   <div class="row">
-    <div class="col">
+    <div [ngClass]="{ 'false' : check()==false && password, 'col-12' : true }">
       <div class="box">
         <div>{{password}}</div>
       </div>
@@ -32,7 +32,6 @@
   </div>
   <div class="row">
     <div *ngIf="password" class="col-12">
-
       <button mat-flat-button color="primary" (click)="copyClipboard()">Copy</button>
     </div>
   </div>
