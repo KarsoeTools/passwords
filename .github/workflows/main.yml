@@ -1,0 +1,25 @@
+name: BuildAndPushImageOnHarborAndUpdateArgoCDConfig
+
+on:
+  push:
+    branches: [ "main" ]
+env:
+  REGISTRY: harbor.mongodb.dk
+
+jobs:
+
+  harbor:
+    uses: KarsoeTools/actionTemplates/.github/workflows/angular.yaml@main
+    with:
+      registry: harbor.mongodb.dk
+      run_number: ${{ github.run_number }}
+      IMAGE_NAME: karsoekube/arm-passwords
+      PROJECT: passwords
+      REPOSITORY: github.com/jennermand/picluster.git
+      branch: ${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
+    secrets:
+      username: ${{ secrets.HARBOR_USERNAME  }}
+      password: ${{ secrets.HARBOR_PASSWORD }}
+      token: ${{ secrets.TOKEN }}
+      username_github: ${{secrets.USERNAME_GITHUB}}
+      email_github: ${{secrets.EMAIL_GITHUB}}
